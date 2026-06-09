@@ -7,16 +7,13 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   Platform,
-  ActivityIndicator,
-  Modal
+  ActivityIndicator
 } from "react-native";
 
 import { LinearGradient } from "expo-linear-gradient";
 import Animated,{
-FadeInDown,
 useSharedValue,
 useAnimatedStyle,
-withSpring
 } from "react-native-reanimated";
 
 import * as Haptics from "expo-haptics";
@@ -474,89 +471,58 @@ Zarejestruj się
 
 </Pressable>
 
-<Modal
-visible={registerVisible}
-transparent
-animationType="slide"
+{registerVisible&&(
+<View style={styles.overlayBg}>
+<KeyboardAvoidingView
+behavior={Platform.OS==="ios"?"padding":"height"}
+style={{width:"100%",alignItems:"center"}}
 >
+<View style={styles.modal}>
 
-<View
-style={styles.modalBg}
->
-
-<View
-style={styles.modal}
->
-
-<Text
-style={styles.modalTitle}
->
-
+<Text style={styles.modalTitle}>
 Rejestracja
-
 </Text>
 
+<View style={styles.inputWrapper}>
+<Ionicons name="mail-outline" size={18} color="#94a3b8"/>
 <TextInput
 placeholder="Email"
 placeholderTextColor="#94a3b8"
 value={registerEmail}
-onChangeText={
-setRegisterEmail
-}
+onChangeText={setRegisterEmail}
 style={styles.input}
+autoCapitalize="none"
+keyboardType="email-address"
 />
+</View>
 
+<View style={styles.inputWrapper}>
+<Ionicons name="lock-closed-outline" size={18} color="#94a3b8"/>
 <TextInput
 placeholder="Hasło"
 placeholderTextColor="#94a3b8"
 secureTextEntry
 value={registerPassword}
-onChangeText={
-setRegisterPassword
-}
+onChangeText={setRegisterPassword}
 style={styles.input}
 />
+</View>
 
-<Pressable
-style={styles.button}
-onPress={
-handleRegister
+<Pressable style={styles.button} onPress={handleRegister}>
+{loading
+?<ActivityIndicator color="white"/>
+:<Text style={styles.buttonText}>Utwórz konto</Text>
 }
->
-
-<Text
-style={styles.buttonText}
->
-
-Utwórz konto
-
-</Text>
-
 </Pressable>
 
-<Pressable
-onPress={()=>
-setRegisterVisible(
-false
-)
-}
->
-
-<Text
-style={styles.register}
->
-
-Anuluj
-
-</Text>
-
+<Pressable onPress={()=>setRegisterVisible(false)}>
+<Text style={styles.register}>Anuluj</Text>
 </Pressable>
 
 </View>
-
+</KeyboardAvoidingView>
 </View>
-
-</Modal>
+)}
 
 </KeyboardAvoidingView>
 
@@ -641,7 +607,8 @@ padding:20
 modal:{
 backgroundColor:"#0f172a",
 padding:20,
-borderRadius:20
+borderRadius:20,
+width:"100%",
 },
 
 modalTitle:{
@@ -670,6 +637,14 @@ color:"white",
 textAlign:"center",
 fontFamily:
 "Inter_600SemiBold"
+},
+
+overlayBg:{
+...StyleSheet.absoluteFillObject,
+backgroundColor:"#00000099",
+justifyContent:"center",
+alignItems:"center",
+padding:20
 }
 
 });

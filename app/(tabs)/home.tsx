@@ -7,7 +7,8 @@ import {
   View,
   Dimensions,
   ScrollView,
-  ActivityIndicator
+  ActivityIndicator,
+  Platform,
 } from "react-native";
 
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -31,12 +32,12 @@ import { signOut, onAuthStateChanged  } from "firebase/auth";
 import { useRouter, useFocusEffect } from "expo-router";
 
 import { LineChart } from "react-native-chart-kit";
-import { searchFood, getFood } from "@/lib/fatsecret";
+import { searchFood, parseFoodItem, getFoodByBarcode } from "@/lib/fatsecret";
+import { CameraView, useCameraPermissions } from "expo-camera";
 
 
 const screenWidth = Dimensions.get("window").width;
 
-// ---------- helpers ----------
 const getDateKey = (d: Date) => d.toISOString().split("T")[0];
 
 const getLastNDays = (n: number) => {
@@ -49,7 +50,6 @@ const getLastNDays = (n: number) => {
   return arr;
 };
 
-// MOTYWY
 const themes: any = {
   green: { primary: "#22c55e", gradient: ["#020617", "#0f172a"] },
   red: { primary: "#ef4444", gradient: ["#1f0a0a", "#450a0a"] },
@@ -93,6 +93,9 @@ return unsub;
   const [fat, setFat] = useState("");
   const [carbs, setCarbs] = useState("");
   const [results,setResults]=useState<any[]>([]);
+  const [scannerVisible, setScannerVisible] = useState(false);
+  const [scanned, setScanned] = useState(false);
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
 
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -117,16 +120,6 @@ return unsub;
 const saveData = async (newData:any) => {
 
  const user = auth.currentUser;
-
- console.log(
-   "UID ZAPIS:",
-   user?.uid
- );
-
- console.log(
-   "EMAIL:",
-   user?.email
- );
 
  if(!user)return;
 
@@ -175,47 +168,39 @@ const saveData = async (newData:any) => {
     }
   };
 
-  // ---------- dodawanie ----------
-  const addMeal = () => {
-    if (!name) return;
-
-    const p = Number(protein) || 0;
-    const f = Number(fat) || 0;
-    const c = Number(carbs) || 0;
-
-    const kcal = p * 4 + c * 4 + f * 9;
-
-    const meal = { name, protein: p, fat: f, carbs: c, kcal };
-
-    const updated={
-      ...data,
-
-      [activeDay]:{
-      ...data[activeDay],
-
-      meals:{
-      ...current.meals,
-
-      [mealType]:
-        [
-        ...current.meals[mealType],
-        meal
-        ]
-
-        }
-
-      }
-
-    };
-
-    saveData(updated);
-
+  const closeModal = () => {
+    setModalVisible(false);
     setName("");
     setProtein("");
     setFat("");
     setCarbs("");
     setResults([]);
-    setModalVisible(false);
+  };
+
+  const addMeal = () => {
+    if (!name) return;
+    const p = Number(protein) || 0;
+    const f = Number(fat) || 0;
+    const c = Number(carbs) || 0;
+    const kcal = p * 4 + c * 4 + f * 9;
+    const meal = { name, protein: p, fat: f, carbs: c, kcal };
+    const updated={
+      ...data,
+      [activeDay]:{
+      ...data[activeDay],
+      meals:{
+      ...current.meals,
+      [mealType]:
+        [
+        ...current.meals[mealType],
+        meal
+        ]
+        }
+      }
+    };
+
+    saveData(updated);
+    closeModal();
   };
 
   const removeMeal = (type: "sniadanie" | "obiad" | "kolacja", index: number) => {
@@ -260,8 +245,55 @@ setResults([]);
 }
 
 };
+  const handleBarcodeScan = async ({ data: barcode }: { data: string }) => {
+  if (scanned) return;
+  setScanned(true);
+  setScannerVisible(false);
 
-  // ---------- SUMY ----------
+  const food = await getFoodByBarcode(barcode);
+  if (!food) {
+    setScanned(false);
+    return;
+  }
+
+  const meal = {
+    name: food.name,
+    protein: food.protein,
+    fat: food.fat,
+    carbs: food.carbs,
+    kcal: food.calories
+  };
+
+  const updated = {
+    ...data,
+    [activeDay]: {
+      ...data[activeDay],
+      meals: {
+        ...current.meals,
+        [mealType]: [...current.meals[mealType], meal]
+      }
+    }
+  };
+
+  await saveData(updated);
+  setResults([]);
+  setModalVisible(false);
+  setScanned(false);
+};
+
+const openScanner = async () => {
+  if (!cameraPermission?.granted) {
+    const result = await requestCameraPermission();
+    if (result.granted) {
+      setModalVisible(false);
+      setScannerVisible(true);
+    }
+    return;
+  }
+  setModalVisible(false);
+  setScannerVisible(true);
+};
+
   const allMeals = [
     ...current.meals.sniadanie,
     ...current.meals.obiad,
@@ -281,7 +313,6 @@ setResults([]);
   const carbsPct = totalMacroKcal ? (totalCarbs*4 / totalMacroKcal)*100 : 0;
   const fatPct = totalMacroKcal ? (totalFat*9 / totalMacroKcal)*100 : 0;
 
-  // ---------- wykres ----------
   const last7 = getLastNDays(7);
 
   const weekCalories = last7.map(d => {
@@ -435,10 +466,18 @@ setResults([]);
           </View>
         </View>
 
-        {/* 📊 WYKRES */}
+        {/* WYKRES */}
         <Modal visible={chartVisible} transparent animationType="fade">
           <BlurView intensity={40} style={styles.modalWrap}>
             <View style={styles.chartModal}>
+
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Wykres tygodniowy</Text>
+                <Pressable onPress={()=>setChartVisible(false)}>
+                  <Ionicons name="close" size={24} color="white"/>
+                </Pressable>
+              </View>
+
               <LineChart
                 data={chartData}
                 width={screenWidth - 40}
@@ -450,10 +489,6 @@ setResults([]);
                   labelColor:()=>"#94a3b8"
                 }}
               />
-
-              <Pressable onPress={()=>setChartVisible(false)}>
-                <Text style={{color:"white",marginTop:10}}>Zamknij</Text>
-              </Pressable>
             </View>
           </BlurView>
         </Modal>
@@ -462,10 +497,27 @@ setResults([]);
         <Modal visible={modalVisible} transparent animationType="fade">
           <BlurView intensity={40} style={styles.modalWrap}>
             <View style={styles.modal}>
-              <TextInput placeholder="Nazwa" value={name} onChangeText={setName} style={styles.input}/>
-              <Pressable style={[styles.button,{backgroundColor:"#334155",marginBottom:10}]} onPress={findFood}>
+
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>
+                  {mealType==="sniadanie"?"Śniadanie":mealType==="obiad"?"Obiad":"Kolacja"}
+                </Text>
+                <Pressable onPress={closeModal}>
+                  <Ionicons name="close" size={24} color="white"/>
+                </Pressable>
+              </View>
+
+              <TextInput placeholder="Nazwa" value={name} onChangeText={setName} style={styles.input} placeholderTextColor="#94a3b8"/>
+                <View style={{flexDirection:"row",gap:8,marginBottom:10}}>
+                  <Pressable style={[styles.button,{backgroundColor:"#334155",flex:1}]} onPress={findFood}>
                 <Text style={{color:"white"}}>Szukaj</Text>
-              </Pressable>
+                </Pressable>
+                {Platform.OS !== "web" && (
+                <Pressable style={[styles.button,{backgroundColor:"#334155",paddingHorizontal:16}]} onPress={openScanner}>
+                <Ionicons name="barcode-outline" size={20} color="white"/>
+                  </Pressable>
+                )}
+                </View>
 
               <ScrollView
                 style={{
@@ -479,85 +531,38 @@ setResults([]);
                   <Pressable
                     key={item.food_id}
                     style={{padding:10,marginBottom:8,backgroundColor:"#ffffff10",borderRadius:10}}
-                    onPress={async()=>{
-                      setName("POBIERANIE...");
-                      const food=
-                      await getFood(
-                        String(item.food_id)
-                      );
-                      
-                      if(!food) {
-                        setName(
-                          "BŁĄD POBRANIA"
-                        );
-                        return;
-                      }
-
-                      const meal={
-
-                        name:
-                        food.name,
-
-                        protein:
-                        food.protein,
-
-                        fat:
-                        food.fat,
-
-                        carbs:
-                        food.carbs,
-
-                        kcal:
-                        food.calories
-
-                      };
-
-                      const updated={
-
-                        ...data,
-
-                        [activeDay]:{
-
-                          ...data[activeDay],
-
-                          meals:{
-
-                            ...current.meals,
-
-                            [mealType]:[
-
-                              ...current
-                              .meals[
-                              mealType
-                              ],
-
-                              meal
-
-                            ]
-
-                          }
-
-                        }
-
-                      };
-
-                      await saveData(
-                        updated
-                      );
-
-                      setResults([]);
-                      setModalVisible(false);
-
-                    }}
+                      onPress={()=>{
+                        const food = parseFoodItem(item);
+                          const meal = {
+                          name: food.name,
+                          protein: food.protein,
+                          fat: food.fat,
+                          carbs: food.carbs,
+                          kcal: food.calories
+                        };
+                          const updated = {
+                          ...data,
+                                [activeDay]: {
+                              ...data[activeDay],
+                                  meals: {
+                                 ...current.meals,
+                                [mealType]: [...current.meals[mealType], meal]
+                               }
+                           }
+                            };
+                              saveData(updated);
+                          setResults([]);
+                        setModalVisible(false);
+                        }}
                   >
                   <Text style={{color:"white"}}>{item.food_name}</Text>
                   </Pressable>
                 ))}
               </ScrollView>
 
-              <TextInput placeholder="Białko" value={protein} keyboardType="numeric" onChangeText={setProtein} style={styles.input}/>
-              <TextInput placeholder="Tłuszcz" value={fat} keyboardType="numeric" onChangeText={setFat} style={styles.input}/>
-              <TextInput placeholder="Węglowodany" value={carbs} keyboardType="numeric" onChangeText={setCarbs} style={styles.input}/>
+              <TextInput placeholder="Białko" value={protein} keyboardType="numeric" onChangeText={setProtein} style={styles.input} placeholderTextColor="#94a3b8"/>
+              <TextInput placeholder="Tłuszcz" value={fat} keyboardType="numeric" onChangeText={setFat} style={styles.input} placeholderTextColor="#94a3b8"/>
+              <TextInput placeholder="Węglowodany" value={carbs} keyboardType="numeric" onChangeText={setCarbs} style={styles.input} placeholderTextColor="#94a3b8"/>
 
               <Pressable style={[styles.button,{backgroundColor:theme.primary}]} onPress={addMeal}>
                 <Text style={{color:"white"}}>Dodaj ręcznie</Text>
@@ -565,6 +570,30 @@ setResults([]);
             </View>
           </BlurView>
         </Modal>
+
+{scannerVisible && (
+  <View style={StyleSheet.absoluteFillObject}>
+    <CameraView
+      style={StyleSheet.absoluteFillObject}
+      facing="back"
+      onBarcodeScanned={scanned ? undefined : handleBarcodeScan}
+      barcodeScannerSettings={{ barcodeTypes: ["ean13","ean8","upc_a","upc_e"] }}
+    />
+    <Pressable
+      style={{position:"absolute",top:50,right:20,backgroundColor:"#00000080",borderRadius:20,padding:8}}
+      onPress={()=>{
+        setScannerVisible(false);
+        setScanned(false);
+        setModalVisible(true);
+      }}
+    >
+      <Ionicons name="close" size={28} color="white"/>
+    </Pressable>
+    <View style={{position:"absolute",bottom:60,alignSelf:"center"}}>
+      <Text style={{color:"white",fontSize:14}}>Nakieruj na kod kreskowy produktu</Text>
+    </View>
+  </View>
+)}
 
       </SafeAreaView>
     </LinearGradient>
@@ -599,6 +628,8 @@ const styles = StyleSheet.create({
   modalWrap:{flex:1,justifyContent:"center",alignItems:"center"},
   modal:{width:"85%",backgroundColor:"#020617",padding:20,borderRadius:20},
   chartModal:{backgroundColor:"#020617",padding:20,borderRadius:20},
+  modalHeader:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginBottom:16},
+  modalTitle:{color:"white",fontSize:17,fontFamily:"Inter_600SemiBold"},
 
   input:{backgroundColor:"#ffffff10",padding:12,borderRadius:12,marginBottom:10,color:"white"},
   button:{padding:12,borderRadius:12,alignItems:"center"}
