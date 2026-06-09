@@ -54,87 +54,43 @@ return [];
 
 }
 
-export async function getFood(
-foodId:string
-){
-
-try{
-
-const response=
-await axios.get(
-API_URL,
-{
-params:{
-foodId
-}
-}
-);
-
-console.log(
-"GET FOOD RESPONSE:",
-response.data
-);
-
-const food=
-response.data;
-
-console.log(
-"PARSED FOOD:",
-food
-);
-
-if(!food){
-return null;
+export function parseFoodItem(item: any) {
+  const desc: string = item.food_description || "";
+  const calories = Number(desc.match(/Calories:\s*([\d.]+)/)?.[1] || 0);
+  const fat = Number(desc.match(/Fat:\s*([\d.]+)/)?.[1] || 0);
+  const carbs = Number(desc.match(/Carbs:\s*([\d.]+)/)?.[1] || 0);
+  const protein = Number(desc.match(/Protein:\s*([\d.]+)/)?.[1] || 0);
+  return {
+    name: item.food_name,
+    calories,
+    fat,
+    carbs,
+    protein
+  };
 }
 
-const servings=
-food?.servings?.serving;
+export async function getFoodByBarcode(barcode: string) {
+  try {
+    const response = await axios.get(
+      `https://world.openfoodfacts.org/api/v2/product/${barcode}.json`
+    );
 
-const serving=
-Array.isArray(servings)
-? servings[0]
-: servings;
+    if (response.data?.status !== 1) return null;
 
-if(!serving){
-return null;
-}
+    const product = response.data.product;
+    const nutriments = product?.nutriments;
 
-return{
+    if (!nutriments) return null;
 
-name:
-food.food_name,
-
-calories:
-Number(
-serving.calories || 0
-),
-
-protein:
-Number(
-serving.protein || 0
-),
-
-fat:
-Number(
-serving.fat || 0
-),
-
-carbs:
-Number(
-serving.carbohydrate || 0
-)
-
-};
-
-}catch(e){
-
-console.log(
-"FOOD ERROR:",
-e
-);
-
-return null;
-
-}
-
+    return {
+      name: product.product_name || product.brands || "Nieznany produkt",
+      calories: Number(nutriments["energy-kcal_100g"] || 0),
+      protein: Number(nutriments["proteins_100g"] || 0),
+      fat: Number(nutriments["fat_100g"] || 0),
+      carbs: Number(nutriments["carbohydrates_100g"] || 0)
+    };
+  } catch (e) {
+    console.log("BARCODE ERROR:", e);
+    return null;
+  }
 }
